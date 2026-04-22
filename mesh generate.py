@@ -1,3 +1,7 @@
+# generates a mesh from a .geo file, plots it, 
+# and saves it as a .msh file
+
+
 import gmsh
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,13 +10,15 @@ os.chdir(os.path.dirname(os.path.abspath(__file__))) #sets the directory as CWD
 
 
 gmsh.initialize()
-gmsh.open("complex_mesh.geo")
+gmsh.open("hexagon_starsplit_mesh.geo")
+#gmsh.open("mesh.geo")
 
 gmsh.option.setNumber("Mesh.Optimize", 1)
 gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
 gmsh.option.setNumber("Mesh.Algorithm", 6)
 gmsh.model.mesh.generate(2)
-gmsh.write("complex_hexagon_mesh.msh")
+gmsh.write("hexagon_starsplit_mesh.msh")
+#gmsh.write("mesh.msh")
 node_tags, node_coords, _ = gmsh.model.mesh.getNodes()
 element_types, element_tags, element_connectivities = gmsh.model.mesh.getElements(dim=2)
 

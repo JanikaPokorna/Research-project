@@ -8,19 +8,23 @@ from skfem.models.poisson import laplace, unit_load, mass
 from skfem.helpers import dot
 
 def neumann_load(v, w):
+    x, y = w.x[0], w.x[1]
     g = 0.0
     return g * v
 
 def rhs(v, w):
     x, y = w.x[0], w.x[1]
     f = np.sin(2*np.pi*x) * np.sin(2*np.pi*y)
+    #f = np.exp(-((x-0.5)**2 + (y-0.5)**2) / 0.01)
+    #f = ((x-0.5)**2 + (y-0.5)**2 < 0.15**2).astype(float)
     return f * v
+    #f1 = np.exp(-((x-0.3)**2 + (y-0.3)**2) / 0.01)
+    #f2 = np.exp(-((x-0.7)**2 + (y-0.6)**2) / 0.02)
+    #return (f1 + f2) * v
+
 
 def load_gmsh_tri(msh_path: str) -> MeshTri:
     msh = meshio.read(msh_path)
-    print("Cell blocks:", [(c.type, len(c.data)) for c in msh.cells])
-    print("Points shape:", msh.points.shape)
-    print("cell_data keys:", list(msh.cell_data.keys()))
     tris = None
     for block in msh.cells:
         if block.type == "triangle":
@@ -28,24 +32,16 @@ def load_gmsh_tri(msh_path: str) -> MeshTri:
             break
     if tris is None:
         raise ValueError("No triangle cells in .msh. This loader expects 2D triangles.")
-    
-    print("Triangles array shape:", tris.shape)  
-    print("First triangle node indices:", tris[0])
-
     p = msh.points[:, :2].T
     t = tris.T
-
-    print("p shape (should be 2 x N):", p.shape)
-    print("t shape (should be 3 x ntri):", t.shape)
-
-    return MeshTri(p,t)
+    return MeshTri(p, t)
 
 def main():
-    msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\hexagon_mesh.msh"
+    msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\mesh.msh"
     mesh = load_gmsh_tri(msh_path)
     
     basis = Basis(mesh, ElementTriP1())
-    fbasis = FacetBasis(mesh, ElementTriP1())
+    fbasis = FacetBasis(mesh, ElementTriP1(), facets=mesh.boundary_facets())
 
     k = 0.02
     alpha = 0.5

@@ -1,0 +1,30 @@
+SetFactory("OpenCASCADE");
+# characteristic mesh size
+lc = 0.1; 
+
+# Points
+
+Point(1) = {0,0,0,lc}
+Point(2) = {1,0,0,lc}
+Point(3) = {1,1,0,lc}
+Point(4) = {0,1,0,lc}
+
+# Lines (Curves)
+
+Line(1) = {1,2}
+Line(2) = {2,3}
+Line(3) = {3,4}
+Line(4) = {4,1}
+
+# Curve loop - closed chain of lines forming the boundary
+Curve Loop(1) = {1,2,3,4}
+
+# Plane surface
+Plane Surface(1) = {1}
+
+# Physical groups
+Physical Surface("Omega") = {1}
+Physical Curve("Gamma_bottom") = {1}
+Physical Curve("Gamma_right") = {2};
+Physical Curve("Gamma_top") = {3};
+Physical Curve("Gamma_left") = {4};

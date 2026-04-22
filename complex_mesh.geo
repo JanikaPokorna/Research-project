@@ -1,3 +1,5 @@
+//base structure of the complex hexagonal mesh
+
 SetFactory("OpenCASCADE");
 
 // ---------------------------
@@ -5,8 +7,6 @@ SetFactory("OpenCASCADE");
 // ---------------------------
 lc_min = 0.05;
 lc_max = 0.20;
-
-// You can still use fields later; this just sets default point sizes.
 
 // ---------------------------
 // Outer HEXAGON (6 points)
@@ -76,8 +76,7 @@ Line(111) = {106, 102}; // diagonal left
 // That is the "conforming interface" guarantee.
 // ---------------------------
 BooleanFragments{ Surface{1}; Delete; }{ Curve{101:111}; Delete; }
-
-
+Physical Surface("Domain") = Surface{:};
 // ---------------------------
 // Physical groups
 // Outer boundary curves: keep for BCs
