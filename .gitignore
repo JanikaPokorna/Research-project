@@ -1,0 +1,36 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# VS Code local settings
+.vscode/
+
+# Jupyter temporary files
+.ipynb_checkpoints/
+
+# Python packaging/build files
+build/
+dist/
+*.egg-info/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Executables/installers
+*.exe
+*.msi
+
+# Gmsh generated mesh files
+*.msh
+
+# Temporary/log files
+*.log
+*.tmp
