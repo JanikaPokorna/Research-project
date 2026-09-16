@@ -7,13 +7,7 @@ from skfem import MeshTri, Basis, asm, FacetBasis, LinearForm
 from skfem.element import ElementTriP1
 from skfem.models.poisson import laplace, unit_load, mass
 from skfem.helpers import dot
-from mesh_utils import load_gmsh_tri
-
-@LinearForm
-def neumann_load(v, w):
-    x, y = w.x[0], w.x[1]
-    g = 0.0
-    return g * v
+from mesh_utils import load_gmsh_tri_with_boundary_groups
 
 @LinearForm
 def rhs(v, w):
@@ -29,18 +23,26 @@ def rhs(v, w):
 
 def main(mesh_filename: str | None = None):
     msh_path = mesh_filename or str(Path(__file__).with_name("mesh.msh"))
-    mesh = load_gmsh_tri(msh_path)
+    mesh, boundary_groups = load_gmsh_tri_with_boundary_groups(msh_path)
     
     basis = Basis(mesh, ElementTriP1())
-    fbasis = FacetBasis(mesh, ElementTriP1(), facets=mesh.boundary_facets())
-
     k = 0.02
     alpha = 0.5
 
     D = k * asm(laplace, basis)
     M = alpha * asm(mass, basis)
     A = D + M
-    bN = asm(neumann_load, fbasis)
+    boundary_fluxes = {name: 0.0 for name in boundary_groups}
+    bN = np.zeros(basis.N)
+    for group_name, facets in boundary_groups.items():
+        flux = boundary_fluxes[group_name]
+
+        @LinearForm
+        def neumann_load(v, w):
+            return flux * v
+
+        fbasis = FacetBasis(mesh, ElementTriP1(), facets=facets)
+        bN += asm(neumann_load, fbasis)
     b = asm(rhs, basis) + bN
     print("A shape:", A.shape, "nnz:", A.nnz)
     print("b shape:", b.shape, "b min/max:", float(b.min()), float(b.max()))

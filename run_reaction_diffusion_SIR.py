@@ -6,10 +6,10 @@ from scipy.sparse.linalg import spsolve
 from scipy.sparse import csr_matrix
 from typing import cast
 
-from skfem import Basis, asm
+from skfem import Basis, FacetBasis, LinearForm, asm
 from skfem.element import ElementTriP1
 from skfem.models.poisson import laplace, mass
-from mesh_utils import load_gmsh_tri
+from mesh_utils import load_gmsh_tri_with_boundary_groups
 
 def initial_conditions(basis: Basis):
     """Example ICs: mostly S, small infected Gaussian bump, R=0."""
@@ -33,13 +33,31 @@ def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
     fR = gamma * I - mu * R
     return fS, fI, fR
 
+
+def assemble_boundary_fluxes(mesh, boundary_groups, fluxes, basis):
+    boundary_load = np.zeros(basis.N)
+    for group_name, facets in boundary_groups.items():
+        flux = fluxes[group_name]
+
+        @LinearForm
+        def boundary_flux(v, w):
+            return flux * v
+
+        facet_basis = FacetBasis(mesh, ElementTriP1(), facets=facets)
+        boundary_load += asm(boundary_flux, facet_basis)
+    return boundary_load
+
 def main(mesh_filename: str | None = None):
     #msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\mesh.msh"
     msh_path = mesh_filename or str(Path(__file__).with_name("test_mesh.msh"))
     #msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\hexagon_irregular_complex_mesh.msh"
     
-    mesh = load_gmsh_tri(msh_path)
+    mesh, boundary_groups = load_gmsh_tri_with_boundary_groups(msh_path)
     basis = Basis(mesh, ElementTriP1())
+
+    # Boundary fluxes are applied to S, I, and R on each named physical group.
+    boundary_fluxes = {name: 0.0 for name in boundary_groups}
+    boundary_load = assemble_boundary_fluxes(mesh, boundary_groups, boundary_fluxes, basis)
 
     K = asm(laplace, basis)
     M = asm(mass, basis)
@@ -82,9 +100,9 @@ def main(mesh_filename: str | None = None):
             fS, fI, fR = reaction_terms(Sk, Ik, Rk, nu, beta, mu, gamma)
 
             # Because reactions are nodewise, we put them into a FE load via M @ f
-            bS = rhsS_base + (M @ fS)
-            bI = rhsI_base + (M @ fI)
-            bR = rhsR_base + (M @ fR)
+            bS = rhsS_base + (M @ fS) + boundary_load
+            bI = rhsI_base + (M @ fI) + boundary_load
+            bR = rhsR_base + (M @ fR) + boundary_load
 
             Snew = cast(np.ndarray, spsolve(AS, bS))
             Inew = cast(np.ndarray, spsolve(AI, bI))

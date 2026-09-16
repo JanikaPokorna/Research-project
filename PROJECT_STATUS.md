@@ -19,8 +19,10 @@ The project currently contains four main model types:
 | `run_SIR.py` | SIR model at mesh nodes without spatial diffusion | `solve_ivp` and `MeshTri` |
 | `run_diffusion.py` | Steady diffusion/reaction problem | P1 FEM, stiffness matrix, mass matrix, Neumann load |
 | `run_reaction_diffusion.py` | Spatial SIR reaction-diffusion model | Implicit Euler and Picard iteration |
-| `run_reaction_diffusion_SIR.py` | More robust spatial SIR reaction-diffusion model | Implicit Euler, Picard iteration, multiple triangle blocks |
-| `mesh_utils.py` | Shared Gmsh triangle mesh loader | Combines all triangle blocks and compacts used points |
+| `run_reaction_diffusion_SIR.py` | More robust spatial SIR reaction-diffusion model | Implicit Euler, Picard iteration, multiple triangle blocks, named boundary fluxes |
+| `mesh_utils.py` | Shared Gmsh mesh loader | Loads triangle blocks and maps physical boundary groups to facets |
+| `mesh_inspect.py` | Mesh inspection utility | Reports points, cells, triangles, physical groups, and boundary edges |
+| `mesh_compare.py` | Mesh comparison plotter | Creates a four-panel comparison of representative meshes |
 | `mesh generate.py` | Generates the star-split mesh | Gmsh Python API |
 | `irregular mesh generate.py` | Generates a locally refined irregular mesh | Gmsh size fields and Python API |
 
@@ -66,7 +68,7 @@ The script has been tested through `t = 1.0` successfully.
 
 This is the more robust reaction-diffusion implementation. It uses the shared loader in `mesh_utils.py`, which combines all triangle blocks from a Gmsh file and compacts the used point indices. It currently uses the repository-relative `test_mesh.msh` path.
 
-It has been tested through `t = 3.5` successfully and is suitable for meshes containing multiple triangle blocks, such as the complex and star-split meshes.
+It has been tested through `t = 3.5` successfully and is suitable for meshes containing multiple triangle blocks, such as the complex and star-split meshes. It also assembles separate Neumann fluxes for each physical boundary group; the default flux for every group is zero.
 
 ## Geometry Sources and Mesh Generators
 
@@ -129,7 +131,45 @@ This is currently the main generator for a locally refined star-split mesh.
 
 ### `mesh_utils.py`
 
-This shared utility provides `load_gmsh_tri(...)` for all mesh-based solvers. It accepts either a string path or a `Path`, loads every triangle block in the Gmsh file, removes unused points, remaps point indices, and returns a `scikit-fem` `MeshTri`.
+This shared utility provides `load_gmsh_tri(...)` and `load_gmsh_tri_with_boundary_groups(...)`. It accepts either a string path or a `Path`, loads every triangle block in the Gmsh file, removes unused points, remaps point indices, and can map named physical curve groups such as `Gamma_1` to scikit-fem facet indices.
+
+### `mesh_inspect.py`
+
+This utility reports the structure of a Gmsh mesh without running a simulation. It displays:
+
+- Point count
+- Cell blocks and element counts
+- Triangle block count and total triangle count
+- Gmsh physical groups and their dimensions/tags
+- Boundary-edge count computed from triangle connectivity
+- Physical tags attached to each cell block
+
+Run it with:
+
+```text
+python mesh_inspect.py heptagon_irregular_mesh.msh
+```
+
+### `mesh_compare.py`
+
+This utility creates `mesh_comparison.png`, a four-panel comparison of:
+
+- The coarse irregular heptagon
+- The refined star-split mesh
+- The star-split hexagon
+- The complex irregular hexagon
+
+Each panel shows the mesh geometry and its point/triangle counts. Run it with:
+
+```text
+python mesh_compare.py
+```
+
+Use `--output` to choose another image path:
+
+```text
+python mesh_compare.py --output figures/mesh_comparison.png
+```
 
 ## Command-Line Mesh Selection
 
@@ -199,14 +239,14 @@ All current mesh-based solvers now use `mesh_utils.py`, which loads every triang
 ```python
 for block in msh.cells:
     if block.type == "triangle":
-    triangle_blocks.append(block.data)
+        triangle_blocks.append(block.data)
 ```
 
 This supports single-block meshes as well as meshes such as `test_mesh.msh` and the complex meshes.
 
 ### Mesh physical groups
 
-The `.msh` files contain physical names for domains and boundaries, but the current loaders mostly detect the outer boundary geometrically through `mesh.boundary_facets()`. They do not yet use the Gmsh physical group names to apply different boundary conditions to individual edges.
+The shared loader now maps physical curve groups to scikit-fem facets. `run_diffusion.py` and `run_reaction_diffusion_SIR.py` assemble Neumann contributions separately for every named group using a `boundary_fluxes` dictionary. The default value for every group is `0.0`, preserving the previous zero-flux behavior; individual values can be changed per edge.
 
 ### Plotting
 
@@ -214,10 +254,27 @@ Running with a non-interactive Matplotlib backend produces a warning at `plt.sho
 
 ### Configuration
 
-Mesh selection is currently hard-coded inside each solver. A useful future improvement would be to accept the mesh filename and model parameters through command-line arguments or a configuration file.
+Mesh filenames can now be supplied to every mesh-based solver as an optional command-line argument. Model parameters remain configured in the Python files.
 
-## Recommended Next Steps
+## Completed Recommendations
 
-1. Add a mesh inspection script that reports points, triangles, physical groups, and boundary edges.
-2. Add plots comparing coarse, refined, star-split, and complex meshes.
-3. Use physical boundary groups for separate boundary conditions on different edges.
+The recommendations from the initial project review are complete:
+
+- Shared multi-block mesh loading was moved to `mesh_utils.py`.
+- All mesh-based solvers accept an optional mesh filename from the command line.
+- `heptagon_irregular_mesh.msh` was regenerated with triangle elements.
+- `mesh_inspect.py` reports mesh structure, physical groups, and boundary edges.
+- `mesh_compare.py` generates plots comparing representative meshes.
+- Physical boundary groups are used for separate Neumann flux assembly in `run_diffusion.py` and `run_reaction_diffusion_SIR.py`.
+
+There are no outstanding recommendations from the original project review.
+
+## Modeling Assessment
+
+- Current meshes are sufficient for a numerical prototype and abstract district-level city studies.
+- The geometries are synthetic polygons, not real GIS-based city boundaries, roads, or buildings.
+- Internal regions are geometric only; they do not yet have district-specific epidemiological parameters.
+- A realistic city model may need spatially varying population, infection, recovery, and diffusion parameters.
+- Mesh and time-step refinement studies are still needed to demonstrate numerical reliability.
+- The current model is continuous diffusion-based; transportation networks and commuter flows are not represented.
+- Mesh coordinates and model parameters are mostly dimensionless and need physical scaling for real-city interpretation.
