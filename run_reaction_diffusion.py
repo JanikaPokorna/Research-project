@@ -1,25 +1,15 @@
+import argparse
 import numpy as np
-import meshio
 import matplotlib.pyplot as plt
+from pathlib import Path
 from scipy.sparse.linalg import spsolve
+from typing import cast
 from scipy.sparse import csr_matrix
 
 from skfem import MeshTri, Basis, asm
 from skfem.element import ElementTriP1
 from skfem.models.poisson import laplace, mass
-
-def load_gmsh_tri(msh_path: str) -> MeshTri:
-    msh = meshio.read(msh_path)
-    tris = None
-    for block in msh.cells:
-        if block.type == "triangle":
-            tris = block.data
-            break
-    if tris is None:
-        raise ValueError("No triangle cells in .msh. This loader expects 2D triangles.")
-    p = msh.points[:, :2].T
-    t = tris.T
-    return MeshTri(p, t)
+from mesh_utils import load_gmsh_tri
 
 def initial_conditions(basis: Basis):
     """Example ICs: mostly S, small infected Gaussian bump, R=0."""
@@ -42,8 +32,8 @@ def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
     fR = gamma * I - mu * R
     return fS, fI, fR
 
-def main():
-    msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\hexagon_mesh.msh"
+def main(mesh_filename: str | None = None):
+    msh_path = mesh_filename or str(Path(__file__).with_name("hexagon_mesh.msh"))
     mesh = load_gmsh_tri(msh_path)
     basis = Basis(mesh, ElementTriP1())
 
@@ -90,9 +80,9 @@ def main():
             bI = rhsI_base + (M @ fI)
             bR = rhsR_base + (M @ fR)
 
-            Snew = spsolve(AS, bS)
-            Inew = spsolve(AI, bI)
-            Rnew = spsolve(AR, bR)
+            Snew = cast(np.ndarray, spsolve(AS, bS))
+            Inew = cast(np.ndarray, spsolve(AI, bI))
+            Rnew = cast(np.ndarray, spsolve(AR, bR))
 
             # Convergence check (relative-ish)
             err = max(
@@ -130,4 +120,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run the reaction-diffusion SIR model on a Gmsh mesh.")
+    parser.add_argument("mesh", nargs="?", help="Path to a .msh file.")
+    args = parser.parse_args()
+    main(args.mesh)

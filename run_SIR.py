@@ -1,25 +1,13 @@
+import argparse
 import numpy as np
-import meshio
 import matplotlib.pyplot as plt
+from pathlib import Path
 from scipy.integrate import solve_ivp
 from scipy.sparse import csr_matrix
 
 from skfem import MeshTri, Basis
 from skfem.element import ElementTriP1
-
-
-def load_gmsh_tri(msh_path: str) -> MeshTri:
-    msh = meshio.read(msh_path)
-    tris = None
-    for block in msh.cells:
-        if block.type == "triangle":
-            tris = block.data
-            break
-    if tris is None:
-        raise ValueError("No triangle cells in .msh. This loader expects 2D triangles.")
-    p = msh.points[:, :2].T
-    t = tris.T
-    return MeshTri(p, t)
+from mesh_utils import load_gmsh_tri
 
 def initial_conditions(basis: Basis):
     """Nodal initial conditions: mostly S, with a Gaussian bump in I, R=0."""
@@ -51,8 +39,8 @@ def sir_rhs_field(t, y, beta, gamma, eps=1e-12, use_local_N=True, N_global=None)
 
     return np.concatenate([dS, dI, dR])
 
-def main():
-    msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\hexagon_mesh.msh"
+def main(mesh_filename: str | None = None):
+    msh_path = mesh_filename or str(Path(__file__).with_name("hexagon_mesh.msh"))
     mesh = load_gmsh_tri(msh_path)
     basis = Basis(mesh, ElementTriP1())
 
@@ -100,4 +88,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run the SIR model on a Gmsh mesh.")
+    parser.add_argument("mesh", nargs="?", help="Path to a .msh file.")
+    args = parser.parse_args()
+    main(args.mesh)

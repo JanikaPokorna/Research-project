@@ -1,52 +1,15 @@
+import argparse
 import numpy as np
-import meshio
 import matplotlib.pyplot as plt
+from pathlib import Path
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import csr_matrix
+from typing import cast
 
-from skfem import MeshTri, Basis, asm
+from skfem import Basis, asm
 from skfem.element import ElementTriP1
 from skfem.models.poisson import laplace, mass
-
-"""def load_gmsh_tri(msh_path: str) -> MeshTri:
-    msh = meshio.read(msh_path)
-    tris = None
-    for block in msh.cells:
-        if block.type == "triangle":
-            tris = block.data
-            break
-    if tris is None:
-        raise ValueError("No triangle cells in .msh. This loader expects 2D triangles.")
-    used = np.unique(tris) # find which point indices are actually used by triangles
-    points_used = msh.points[used, :2]
-    old_to_new = {old: new for new, old in enumerate(used)}
-    tris_new = np.vectorize(old_to_new.get)(tris)
-    p = points_used.T
-    t = tris_new.T
-    return MeshTri(p, t)"""
-
-def load_gmsh_tri(msh_path: str) -> MeshTri:
-    msh = meshio.read(msh_path)
-
-    tri_blocks = [block.data for block in msh.cells if block.type == "triangle"]
-    if not tri_blocks:
-        raise ValueError("No triangle cells in .msh. This loader expects 2D triangles.")
-
-    # stack all triangle blocks from all fragments/surfaces
-    tris = np.vstack(tri_blocks)
-
-    # keep only points actually used by these triangles
-    used = np.unique(tris)
-    points_used = msh.points[used, :2]
-
-    # old point index -> new compact index
-    old_to_new = {old: new for new, old in enumerate(used)}
-    tris_new = np.vectorize(old_to_new.get)(tris)
-
-    p = points_used.T
-    t = tris_new.T
-
-    return MeshTri(p, t)
+from mesh_utils import load_gmsh_tri
 
 def initial_conditions(basis: Basis):
     """Example ICs: mostly S, small infected Gaussian bump, R=0."""
@@ -70,9 +33,9 @@ def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
     fR = gamma * I - mu * R
     return fS, fI, fR
 
-def main():
+def main(mesh_filename: str | None = None):
     #msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\mesh.msh"
-    msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\test_mesh.msh"
+    msh_path = mesh_filename or str(Path(__file__).with_name("test_mesh.msh"))
     #msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\hexagon_irregular_complex_mesh.msh"
     
     mesh = load_gmsh_tri(msh_path)
@@ -123,9 +86,9 @@ def main():
             bI = rhsI_base + (M @ fI)
             bR = rhsR_base + (M @ fR)
 
-            Snew = spsolve(AS, bS)
-            Inew = spsolve(AI, bI)
-            Rnew = spsolve(AR, bR)
+            Snew = cast(np.ndarray, spsolve(AS, bS))
+            Inew = cast(np.ndarray, spsolve(AI, bI))
+            Rnew = cast(np.ndarray, spsolve(AR, bR))
 
             # Convergence check (relative-ish)
             err = max(
@@ -166,4 +129,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run the robust reaction-diffusion SIR model on a Gmsh mesh.")
+    parser.add_argument("mesh", nargs="?", help="Path to a .msh file.")
+    args = parser.parse_args()
+    main(args.mesh)

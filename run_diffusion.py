@@ -1,17 +1,21 @@
+import argparse
 import numpy as np
-import meshio
+from pathlib import Path
 from scipy.sparse.linalg import spsolve
 
 from skfem import MeshTri, Basis, asm, FacetBasis, LinearForm
 from skfem.element import ElementTriP1
 from skfem.models.poisson import laplace, unit_load, mass
 from skfem.helpers import dot
+from mesh_utils import load_gmsh_tri
 
+@LinearForm
 def neumann_load(v, w):
     x, y = w.x[0], w.x[1]
     g = 0.0
     return g * v
 
+@LinearForm
 def rhs(v, w):
     x, y = w.x[0], w.x[1]
     f = np.sin(2*np.pi*x) * np.sin(2*np.pi*y)
@@ -23,21 +27,8 @@ def rhs(v, w):
     #return (f1 + f2) * v
 
 
-def load_gmsh_tri(msh_path: str) -> MeshTri:
-    msh = meshio.read(msh_path)
-    tris = None
-    for block in msh.cells:
-        if block.type == "triangle":
-            tris = block.data
-            break
-    if tris is None:
-        raise ValueError("No triangle cells in .msh. This loader expects 2D triangles.")
-    p = msh.points[:, :2].T
-    t = tris.T
-    return MeshTri(p, t)
-
-def main():
-    msh_path = r"C:\Users\janik\OneDrive\Dokumenty\škola\vejska\magisterske studium\diplomová práce\programky\mesh.msh"
+def main(mesh_filename: str | None = None):
+    msh_path = mesh_filename or str(Path(__file__).with_name("mesh.msh"))
     mesh = load_gmsh_tri(msh_path)
     
     basis = Basis(mesh, ElementTriP1())
@@ -67,4 +58,7 @@ def main():
     print("Solved. u min/max:", float(u.min()), float(u.max()))
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Solve the steady diffusion problem on a Gmsh mesh.")
+    parser.add_argument("mesh", nargs="?", help="Path to a .msh file.")
+    args = parser.parse_args()
+    main(args.mesh)
