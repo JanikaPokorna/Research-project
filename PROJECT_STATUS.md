@@ -163,7 +163,7 @@ The default mesh is `hexagon_mesh.msh` for `run_SIR.py` and `run_reaction_diffus
 | `complex_mesh.msh` | Internally fragmented hexagon | 43 | 66 | Multiple conforming regions |
 | `complex_hexagon_mesh.msh` | Internally fragmented hexagon | 43 | 66 | Similar to `complex_mesh.msh` |
 | `hexagon_irregular_complex_mesh.msh` | Finer irregular complex hexagon | 122 | 216 | More detailed complex mesh |
-| `heptagon_irregular_mesh.msh` | Boundary-only irregular geometry | 79 | 0 | Not usable by current FEM loaders |
+| `heptagon_irregular_mesh.msh` | Irregular seven-sided polygon | 15 | 19 | Regenerated from `simple_heptagon_mesh.geo` |
 
 The triangle counts above include all triangle blocks in each mesh.
 
@@ -204,16 +204,6 @@ for block in msh.cells:
 
 This supports single-block meshes as well as meshes such as `test_mesh.msh` and the complex meshes.
 
-### `heptagon_irregular_mesh.msh`
-
-This file contains boundary line elements but no triangles. It cannot currently be used by the FEM solvers and will produce:
-
-```text
-No triangle cells in .msh
-```
-
-It needs to be regenerated as a two-dimensional mesh before use.
-
 ### Mesh physical groups
 
 The `.msh` files contain physical names for domains and boundaries, but the current loaders mostly detect the outer boundary geometrically through `mesh.boundary_facets()`. They do not yet use the Gmsh physical group names to apply different boundary conditions to individual edges.
@@ -228,7 +218,6 @@ Mesh selection is currently hard-coded inside each solver. A useful future impro
 
 ## Recommended Next Steps
 
-1. Regenerate `heptagon_irregular_mesh.msh` with triangle elements.
-2. Add a mesh inspection script that reports points, triangles, physical groups, and boundary edges.
-3. Add plots comparing coarse, refined, star-split, and complex meshes.
-4. Use physical boundary groups for separate boundary conditions on different edges.
+1. Add a mesh inspection script that reports points, triangles, physical groups, and boundary edges.
+2. Add plots comparing coarse, refined, star-split, and complex meshes.
+3. Use physical boundary groups for separate boundary conditions on different edges.
