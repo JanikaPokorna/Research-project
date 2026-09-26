@@ -21,6 +21,7 @@ The project currently contains four main model types:
 | `run_reaction_diffusion.py` | Spatial SIR reaction-diffusion model | Implicit Euler and Picard iteration |
 | `run_reaction_diffusion_SIR.py` | More robust spatial SIR reaction-diffusion model | Implicit Euler, Picard iteration, multiple triangle blocks, named boundary fluxes |
 | `run_reaction_diffusion_SIR_snapshots_adaptive.py` | Snapshot runner with rejected/retried time steps | Implicit Euler, Picard iteration, row-sum mass lumping, nonnegativity checks |
+| `run_reaction_diffusion_SIR_mesh_comparison.py` | Generates three mesh resolutions and compares SIR snapshots | Gmsh mesh-size limits and shared adaptive solver |
 | `mesh_utils.py` | Shared Gmsh mesh loader | Loads triangle blocks and maps physical boundary groups to facets |
 | `mesh_inspect.py` | Mesh inspection utility | Reports points, cells, triangles, physical groups, and boundary edges |
 | `mesh_compare.py` | Mesh comparison plotter | Creates a four-panel comparison of representative meshes |
@@ -77,7 +78,11 @@ A separate snapshot-oriented runner that retries a time step when its Picard ite
 
 The solver uses row-sum mass lumping for the P1 finite-element mass matrix. This reduced the small negative infected-value undershoot seen on the selected complex mesh with a consistent mass matrix. Negative values no larger than the configured positivity tolerance are clipped to zero; that small projection can introduce a correspondingly small mass change. Larger negative values cause rejection rather than being silently clipped.
 
-The default configuration uses `hexagon_irregular_complex_mesh.msh`, two interior Gaussian infected peaks, zero outer-boundary flux, `T = 5.5`, initial/maximum `dt = 1e-3`, and `min_dt = 1e-8`. It saves six time snapshots plus individual images under `figures/reaction_diffusion_SIR_snapshots_adaptive`. This is rejection-based step-size adaptation, not an error-estimator method: it reduces the step based on Picard convergence and state-validity checks, not an estimate of time-discretization error. A short simulation and a forced large-step retry were exercised successfully; the full default-duration run has not been verified.
+The current default configuration uses `hexagon_irregular_complex_mesh.msh`, two interior Gaussian infected peaks, zero outer-boundary flux, `T = 7`, initial/maximum `dt = 1e-3`, and `min_dt = 1e-8`. It saves six time snapshots for each of S, I, and R, including combined figures and individual images under `figures/reaction_diffusion_SIR_snapshots_adaptive`. This is rejection-based step-size adaptation, not an error-estimator method: it reduces the step based on Picard convergence and state-validity checks, not an estimate of time-discretization error. Row-sum mass lumping is used to reduce small negative P1 undershoots; negative values within a small tolerance are clipped to zero, while materially negative/non-finite trials or Picard non-convergence trigger step rejection and retry. Short simulation and forced-rejection tests passed; the full default-duration run has not been verified.
+
+### `run_reaction_diffusion_SIR_mesh_comparison.py`
+
+Generates three meshes from `complex_mesh.geo` by setting Gmsh's global minimum and maximum mesh-size limits, then runs the same adaptive SIR solver on each mesh. The default rows are coarse (`h_min = 0.10`, `h_max = 0.35`), medium (`0.07`, `0.25`), and fine (`0.035`, `0.14`). It produces one 3-by-9 figure: one row per resolution, and groups of three time snapshots for S, I, and R. It also writes mesh node/triangle counts to `mesh_resolution_summary.csv`. Generated meshes are stored in `meshes_mesh_size_comparison`; the figure and summary default to `figures/mesh_size_comparison`. The size settings are editable in the `MESH_RESOLUTIONS` tuple near the top of the script. A short end-to-end comparison passed; the default final-time comparison has not been verified.
 
 ## Geometry Sources and Mesh Generators
 
@@ -280,16 +285,9 @@ There are no outstanding recommendations from the original project review.
 
 ## Next steps
 
-- check whether the reaction diffusion works with population densities or with population counts, as the results dont go from 0 to 1
-- decide which will be better to use - according to advisor, probably densities
-- as output from each reaction, plot not only I values, but make plots for S and R as well
-- for each run of the reaction diffusion SIR solver, save 6 time snapshots, t1,...,t6=t_max, to show time evolution and not only t_max, save this into a folder
-- make a validation script for the basic diffusion equation solver - to be specified
-- check the boundary fluxes - sign convention, how to assign, keep outside boundary with ZERO flux
-- model different initial conditions, save snapshots, make it presentable
-- put all of my work so far into latex
-- establish paired flux contributions!!! what leaves one area must enter the adjacent area!!
-- ways to fix picard diverence: - reject and retry with smaller dt
-    - dump the picard update
-    - use  positivity preserving diffusion-discretization
-    - use nonnegative reaction transfers
+- Perform time-step and mesh-refinement convergence studies; the adaptive rejection checks protect solver validity but do not estimate discretization error.
+- Create a validation script for the basic steady diffusion equation solver; define benchmark problem and expected convergence behavior.
+- Verify and document Neumann-flux sign convention and boundary-group assignment. Current reaction-diffusion solvers use zero exterior flux by default.
+- Decide whether the commented paired interface-flux example should become an implemented model. The current single continuous conforming FEM solve already couples internal interfaces; explicit equal-and-opposite interface loads are needed for separate regional solves.
+- Complete a full-duration adaptive SIR run and mesh-resolution comparison, and review the saved figures and numerical diagnostics.
+- Assemble the project methods and results into the thesis LaTeX document.
