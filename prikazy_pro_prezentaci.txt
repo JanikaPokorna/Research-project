@@ -1,0 +1,48 @@
+# Spust v terminalu v adresari projektu.
+Set-Location "C:\Users\janik\Documents\škola\magisterske studium\diplomová práce\Research-project-git"
+
+# Zakladni neprostorovy SIR model.
+python model_test.py
+
+# Steady difuze na pravidelnem ctvercovem meshi.
+python run_diffusion.py square_mesh.msh
+
+# Steady difuze na komplexnim meshi.
+python run_diffusion.py complex_mesh.msh
+# complex_mesh nepouzivam dale, protoze nema dobrou strukturu
+
+# SIR bez difuze na standardnim hexagonu.
+python run_SIR.py hexagon_mesh.msh
+# hexagon mesh je hexagon ktery ma uvnitr meshovani, 
+# neni rozdelen na jednotliva uzemi, ktera by mela uvnitr mesh a
+# mela spravne hranice
+
+# Reakcne-difuzni SIR na standardnim hexagonu.
+python run_reaction_diffusion.py hexagon_mesh.msh
+
+# Reakcne-difuzni SIR na testovacim meshi.
+python run_reaction_diffusion.py test_mesh.msh
+# test mesh je jiz rozdelena na jednotlive podoblasti
+# se spravnymi hranicemi (mesh sedi spravne pres hranice)
+# plus jde udelat sit mensi u rohu
+# reakcne difuzni SIR bez nastavitelnych okrajovych toku pro kazdou hranici
+
+# Robustni reakcne-difuzni SIR na testovacim meshi.
+python run_reaction_diffusion_SIR.py test_mesh.msh
+# lze nastavit okrajove toky pro kazdou hranici
+# lepe pracuje s meshi slozenych z vice bloku
+# vypocetne pomalejsi
+
+# Nejdetailnejsi mesh - robustni reakcne-difuzni model.
+python run_reaction_diffusion_SIR.py hexagon_irregular_complex_mesh.msh
+# mesh zde neni tvorena hvezdicovite z prostredka ale je uvnitr vice komplexnich
+# oblasti
+
+# Nejdetailnejsi mesh - jednodussi reakcne-difuzni model.
+python run_reaction_diffusion.py hexagon_irregular_complex_mesh.msh
+
+# Porovnani struktury libovolneho meshe.
+python mesh_inspect.py hexagon_irregular_complex_mesh.msh
+
+# Porovnani vsech hlav nich meshu do obrazku.
+python mesh_compare.py --output figures/mesh_comparison.png

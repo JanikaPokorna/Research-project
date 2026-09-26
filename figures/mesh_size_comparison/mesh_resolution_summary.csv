@@ -1,0 +1,4 @@
+label,h_min,h_max,mesh_file,nodes,triangles
+Coarse,0.1,0.35,meshes_mesh_size_comparison\complex_coarse.msh,55,90
+Medium,0.07,0.25,meshes_mesh_size_comparison\complex_medium.msh,67,114
+Fine,0.035,0.14,meshes_mesh_size_comparison\complex_fine.msh,127,228

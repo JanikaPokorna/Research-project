@@ -12,22 +12,22 @@ from skfem.models.poisson import laplace, mass
 from mesh_utils import load_gmsh_tri
 
 def initial_conditions(basis: Basis):
-    """Example ICs: mostly S, small infected Gaussian bump, R=0."""
+    """Density-based initial conditions with S + I + R = 1."""
     x = basis.doflocs[0]
     y = basis.doflocs[1]
 
-    S0 = 10.0 * np.ones_like(x)
     I0 = 0.1 * np.exp(-((x - 0.5) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
+    S0 = 1.0 - I0
     R0 = np.zeros_like(x)
 
     return S0, I0, R0
 
 def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
-    """Nodewise reactions f(S,I,R) (no diffusion)."""
+    """Density-based nodewise reactions for a normalized SIR model."""
     N = S + I + R + eps
     incidence = beta * (S * I / N)
 
-    fS = nu - incidence - mu * S
+    fS = nu * (1.0 - S) - incidence - mu * S
     fI = incidence - (gamma + mu) * I
     fR = gamma * I - mu * R
     return fS, fI, fR
@@ -40,7 +40,7 @@ def main(mesh_filename: str | None = None):
     K = asm(laplace, basis)
     M = asm(mass, basis)
 
-    nu = 1.0
+    nu = 0.0
     beta = 3
     mu = 0.2
     gamma = 0.5
@@ -99,10 +99,12 @@ def main(mesh_filename: str | None = None):
 
         S, I, R = Sk, Ik, Rk
 
-        # (Optional) positivity clamp: crude but sometimes practical for demos
-        S = np.maximum(S, 0.0)
-        I = np.maximum(I, 0.0)
-        R = np.maximum(R, 0.0)
+        # Keep the density state on the simplex S + I + R = 1.
+        total = S + I + R
+        total = np.where(total > 0.0, total, 1.0)
+        S = np.clip(S / total, 0.0, 1.0)
+        I = np.clip(I / total, 0.0, 1.0)
+        R = np.clip(1.0 - S - I, 0.0, 1.0)
 
         if step % 20 == 0 or step == nsteps - 1:
             print(f"t={t:.3f}, Picard iters={it+1}, "

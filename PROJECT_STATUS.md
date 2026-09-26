@@ -20,6 +20,7 @@ The project currently contains four main model types:
 | `run_diffusion.py` | Steady diffusion/reaction problem | P1 FEM, stiffness matrix, mass matrix, Neumann load |
 | `run_reaction_diffusion.py` | Spatial SIR reaction-diffusion model | Implicit Euler and Picard iteration |
 | `run_reaction_diffusion_SIR.py` | More robust spatial SIR reaction-diffusion model | Implicit Euler, Picard iteration, multiple triangle blocks, named boundary fluxes |
+| `run_reaction_diffusion_SIR_snapshots_adaptive.py` | Snapshot runner with rejected/retried time steps | Implicit Euler, Picard iteration, row-sum mass lumping, nonnegativity checks |
 | `mesh_utils.py` | Shared Gmsh mesh loader | Loads triangle blocks and maps physical boundary groups to facets |
 | `mesh_inspect.py` | Mesh inspection utility | Reports points, cells, triangles, physical groups, and boundary edges |
 | `mesh_compare.py` | Mesh comparison plotter | Creates a four-panel comparison of representative meshes |
@@ -69,6 +70,14 @@ The script has been tested through `t = 1.0` successfully.
 This is the more robust reaction-diffusion implementation. It uses the shared loader in `mesh_utils.py`, which combines all triangle blocks from a Gmsh file and compacts the used point indices. It currently uses the repository-relative `test_mesh.msh` path.
 
 It has been tested through `t = 3.5` successfully and is suitable for meshes containing multiple triangle blocks, such as the complex and star-split meshes. It also assembles separate Neumann fluxes for each physical boundary group; the default flux for every group is zero.
+
+### `run_reaction_diffusion_SIR_snapshots_adaptive.py`
+
+A separate snapshot-oriented runner that retries a time step when its Picard iteration fails or produces non-finite or materially negative compartment values. On rejection it halves the trial time step and restarts from the last accepted state. The run stops with an error if the step would need to go below `min_dt` or the rejection limit is exceeded. After an accepted step, the next proposed step may grow by a factor of 1.25, up to the configured `dt` maximum.
+
+The solver uses row-sum mass lumping for the P1 finite-element mass matrix. This reduced the small negative infected-value undershoot seen on the selected complex mesh with a consistent mass matrix. Negative values no larger than the configured positivity tolerance are clipped to zero; that small projection can introduce a correspondingly small mass change. Larger negative values cause rejection rather than being silently clipped.
+
+The default configuration uses `hexagon_irregular_complex_mesh.msh`, two interior Gaussian infected peaks, zero outer-boundary flux, `T = 5.5`, initial/maximum `dt = 1e-3`, and `min_dt = 1e-8`. It saves six time snapshots plus individual images under `figures/reaction_diffusion_SIR_snapshots_adaptive`. This is rejection-based step-size adaptation, not an error-estimator method: it reduces the step based on Picard convergence and state-validity checks, not an estimate of time-discretization error. A short simulation and a forced large-step retry were exercised successfully; the full default-duration run has not been verified.
 
 ## Geometry Sources and Mesh Generators
 
@@ -269,12 +278,18 @@ The recommendations from the initial project review are complete:
 
 There are no outstanding recommendations from the original project review.
 
-## Modeling Assessment
+## Next steps
 
-- Current meshes are sufficient for a numerical prototype and abstract district-level city studies.
-- The geometries are synthetic polygons, not real GIS-based city boundaries, roads, or buildings.
-- Internal regions are geometric only; they do not yet have district-specific epidemiological parameters.
-- A realistic city model may need spatially varying population, infection, recovery, and diffusion parameters.
-- Mesh and time-step refinement studies are still needed to demonstrate numerical reliability.
-- The current model is continuous diffusion-based; transportation networks and commuter flows are not represented.
-- Mesh coordinates and model parameters are mostly dimensionless and need physical scaling for real-city interpretation.
+- check whether the reaction diffusion works with population densities or with population counts, as the results dont go from 0 to 1
+- decide which will be better to use - according to advisor, probably densities
+- as output from each reaction, plot not only I values, but make plots for S and R as well
+- for each run of the reaction diffusion SIR solver, save 6 time snapshots, t1,...,t6=t_max, to show time evolution and not only t_max, save this into a folder
+- make a validation script for the basic diffusion equation solver - to be specified
+- check the boundary fluxes - sign convention, how to assign, keep outside boundary with ZERO flux
+- model different initial conditions, save snapshots, make it presentable
+- put all of my work so far into latex
+- establish paired flux contributions!!! what leaves one area must enter the adjacent area!!
+- ways to fix picard diverence: - reject and retry with smaller dt
+    - dump the picard update
+    - use  positivity preserving diffusion-discretization
+    - use nonnegative reaction transfers
