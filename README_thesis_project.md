@@ -1,6 +1,6 @@
 # SIR Reaction--Diffusion Research Project
 
-## 1. Project aim
+## 1. Project aim 
 
 This project studies mathematical models of infectious-disease spread, with emphasis on the spatial SIR reaction--diffusion system and its numerical solution by the finite element method (FEM).
 
