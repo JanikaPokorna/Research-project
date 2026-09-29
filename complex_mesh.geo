@@ -76,17 +76,6 @@ Line(111) = {106, 102}; // diagonal left
 // That is the "conforming interface" guarantee.
 // ---------------------------
 BooleanFragments{ Surface{1}; Delete; }{ Curve{101:111}; Delete; }
+// Shared district interfaces cancel; only the domain's exterior remains.
+Physical Curve("Exterior") = CombinedBoundary{ Surface{:}; };
 Physical Surface("Domain") = Surface{:};
-// ---------------------------
-// Physical groups
-// Outer boundary curves: keep for BCs
-// After fragmentation, the original outer lines usually survive with same IDs,
-// but OCC can renumber things in some cases.
-// We'll still define physical groups for the original outer edges.
-// ---------------------------
-Physical Curve("Outer_1") = {1};
-Physical Curve("Outer_2") = {2};
-Physical Curve("Outer_3") = {3};
-Physical Curve("Outer_4") = {4};
-Physical Curve("Outer_5") = {5};
-Physical Curve("Outer_6") = {6};

@@ -113,9 +113,10 @@ This is rejection-based step-size control, not an error-estimator-based adaptive
 | `run_reaction_diffusion_SIR_snapshots_adaptive.py` | Current density-based solver with mass lumping, adaptive step rejection, and snapshots of all compartments. |
 | `mesh_utils.py` | Shared Gmsh loader; combines triangle blocks and maps physical boundary groups to facets. |
 | `mesh_inspect.py` | Reports mesh size, cell blocks, physical groups, and boundary edges. |
-| `mesh_compare.py` | Produces a four-panel comparison of representative meshes. |
+| `mesh_compare.py` | Compares representative heptagon, hexagon, and square meshes. |
 | `mesh generate.py` | Generates the star-split mesh. |
 | `irregular mesh generate.py` | Generates a locally refined star-split mesh. |
+| `square mesh generate.py` | Generates a structured regular square mesh. |
 
 ## 5. Mesh handling
 
@@ -130,7 +131,7 @@ The main geometries are:
 
 | Geometry or mesh | Description |
 |---|---|
-| `square_mesh.msh` | Regular unit-square benchmark. |
+| `square_regular_mesh.msh` | Structured unit-square benchmark with 10 equal intervals per side. |
 | `mesh.geo` / `mesh.msh` | Coarse irregular seven-sided domain. |
 | `hexagon_starsplit_mesh.geo` | Hexagon divided into six connected sectors. |
 | `complex_mesh.geo` | Hexagon fragmented into conforming subregions with shared interfaces. |

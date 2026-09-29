@@ -21,6 +21,8 @@ DEFAULT_T = 7
 DEFAULT_DT = 1e-3
 DEFAULT_MIN_DT = 1e-8
 DEFAULT_MESH = "hexagon_irregular_complex_mesh.msh"
+DEFAULT_OUTPUT_DIR = "figures/reaction_diffusion_SIR_snapshots_adaptive"
+DEFAULT_FRACTION_OUTPUT_DIR = "figures/reaction_diffusion_SIR_recovered_fraction"
 
 
 def initial_conditions(basis: Basis):
@@ -28,12 +30,16 @@ def initial_conditions(basis: Basis):
     x = basis.doflocs[0]
     y = basis.doflocs[1]
 
-    I_left = 0.1 * np.exp(-((x - 0.25) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
-    I_right = 0.1 * np.exp(-((x - 0.75) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
-    I = I_left + I_right
-    S = 1.0 - I
-    R = np.zeros_like(x)
-    return S, I, R
+    I0 = 0.1 * np.exp(-((x - 0.5) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2)) 
+    S0 = 1.0 - I0
+    R0 = np.zeros_like(x)
+
+    # I_left = 0.1 * np.exp(-((x - 0.25) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
+    # I_right = 0.1 * np.exp(-((x - 0.75) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
+    # I0 = I_left + I_right
+    # S0 = 1.0 - I0
+    # R0 = np.zeros_like(x)
+    return S0, I0, R0
 
 
 def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
@@ -109,6 +115,18 @@ def run_simulation(
     DR = 1e-3
 
     S, I, R = initial_conditions(basis)
+    ones = np.ones(basis.N)
+    initial_total = float(ones @ (M @ (S + I + R)))
+
+    if initial_total <= 0:
+        raise ValueError("Initial total population must be positive.")
+
+    S /= initial_total
+    I /= initial_total
+    R /= initial_total
+
+    print("Initial total population:",
+      float(ones @ (M @ (S + I + R))))
     picard_maxit = 20
     picard_tol = 1e-8
     positivity_tol = 1e-12
@@ -246,8 +264,117 @@ def run_simulation(
 
         if step_number % 1000 == 0:
             print(f"Accepted step {step_number}, t={current_time:.6f}, dt-next={dt_current:.3e}")
-
+    final_total = float(ones @ (M @ (S + I + R)))
+    print(f"Final total population: {final_total:.12f}")
+    print(f"Change in total population: {final_total - 1.0:.3e}")
     return mesh, snapshots
+
+
+def plot_recovered_fraction_snapshots(mesh, snapshots, output_dir: str | Path):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not snapshots:
+        raise ValueError("No snapshots were generated.")
+
+    triangulation = Triangulation(mesh.p[0], mesh.p[1], triangles=mesh.t.T)
+    compartment_fractions = {name: [] for name in ("S", "I", "R")}
+    for _, susceptible, infected, recovered in snapshots:
+        total = susceptible + infected + recovered
+        for name, values in zip(("S", "I", "R"), (susceptible, infected, recovered)):
+            fraction = np.divide(
+                values,
+                total,
+                out=np.zeros_like(values),
+                where=total > 1e-12,
+            )
+            if not np.isfinite(fraction).all():
+                raise ValueError(f"{name} fractions contain non-finite values.")
+            compartment_fractions[name].append(fraction)
+
+        active = total > 1e-12
+        fraction_sum = (
+            compartment_fractions["S"][-1]
+            + compartment_fractions["I"][-1]
+            + compartment_fractions["R"][-1]
+        )
+        if not np.allclose(fraction_sum[active], 1.0, rtol=1e-10, atol=1e-10):
+            raise ValueError("Compartment fractions do not sum to one.")
+
+    fields = (
+        ("S", "Susceptible fraction", "viridis"),
+        ("I", "Infected fraction", "magma"),
+        ("R", "Recovered fraction", "cividis"),
+    )
+    for name, label, cmap in fields:
+        field_values = compartment_fractions[name]
+        fraction_min = min(float(values.min()) for values in field_values)
+        fraction_max = max(float(values.max()) for values in field_values)
+        if fraction_min < -1e-10 or fraction_max > 1.0 + 1e-10:
+            raise ValueError(
+                f"{label} outside [0, 1]: [{fraction_min:.6g}, {fraction_max:.6g}]."
+            )
+        color_min = fraction_min
+        color_max = fraction_max
+        if np.isclose(color_min, color_max):
+            color_max = color_min + 1e-12
+        color_levels = np.linspace(color_min, color_max, 31)
+
+        fig, axes = plt.subplots(2, 3, figsize=(15, 8), constrained_layout=True)
+        axes = axes.ravel()
+        for ax in axes:
+            ax.set_axis_off()
+
+        for idx, (time, _, _, _) in enumerate(snapshots[:6]):
+            ax = axes[idx]
+            ax.set_axis_on()
+            contour = ax.tricontourf(
+                triangulation,
+                field_values[idx],
+                levels=color_levels,
+                vmin=color_min,
+                vmax=color_max,
+                cmap=cmap,
+            )
+            ax.set_aspect("equal")
+            ax.set_title(f"t = {time:.3f}")
+            ax.set_xlabel("x")
+            ax.set_ylabel("y")
+            fig.colorbar(contour, ax=ax, label=f"{name} / (S + I + R)")
+
+        for ax in axes[min(len(snapshots), 6):]:
+            ax.set_visible(False)
+
+        if name == "R":
+            combined_name = "reaction_diffusion_SIR_recovered_fraction_snapshots_adaptive.png"
+            image_prefix = "adaptive_R_fraction_snapshot"
+        else:
+            combined_name = f"reaction_diffusion_SIR_{name}_fraction_snapshots_adaptive.png"
+            image_prefix = f"adaptive_{name}_fraction_snapshot"
+        fraction_path = output_dir / combined_name
+        fig.savefig(fraction_path, dpi=200)
+        plt.close(fig)
+
+        for idx, (time, _, _, _) in enumerate(snapshots):
+            fig_single, ax_single = plt.subplots(figsize=(5, 4))
+            contour = ax_single.tricontourf(
+                triangulation,
+                field_values[idx],
+                levels=color_levels,
+                vmin=color_min,
+                vmax=color_max,
+                cmap=cmap,
+            )
+            ax_single.set_aspect("equal")
+            ax_single.set_title(f"{label} at t = {time:.3f}")
+            fig_single.colorbar(contour, ax=ax_single, label=f"{name} / (S + I + R)")
+            fig_single.tight_layout()
+            fig_single.savefig(output_dir / f"{image_prefix}_{idx + 1:02d}.png", dpi=200)
+            plt.close(fig_single)
+
+        print(
+            f"Saved {label.lower()} snapshots to {fraction_path}; "
+            f"range=[{fraction_min:.6g}, {fraction_max:.6g}]."
+        )
 
 
 def plot_snapshots(mesh, snapshots, output_dir: str | Path):
@@ -332,12 +459,14 @@ def plot_snapshots(mesh, snapshots, output_dir: str | Path):
 
 def main(
     mesh_filename: str | None = None,
-    output_dir: str | Path = "figures/reaction_diffusion_SIR_snapshots_adaptive",
+    output_dir: str | Path = DEFAULT_OUTPUT_DIR,
     n_snapshots: int = 6,
     T: float = DEFAULT_T,
     dt: float = DEFAULT_DT,
     min_dt: float = DEFAULT_MIN_DT,
     max_rejections: int = 20,
+    recovered_fraction_only: bool = False,
+    fraction_output_dir: str | Path = DEFAULT_FRACTION_OUTPUT_DIR,
 ):
     mesh, snapshots = run_simulation(
         mesh_filename=mesh_filename,
@@ -347,7 +476,11 @@ def main(
         min_dt=min_dt,
         max_rejections=max_rejections,
     )
-    plot_snapshots(mesh, snapshots, output_dir)
+    if recovered_fraction_only:
+        plot_recovered_fraction_snapshots(mesh, snapshots, fraction_output_dir)
+    else:
+        plot_snapshots(mesh, snapshots, output_dir)
+        plot_recovered_fraction_snapshots(mesh, snapshots, fraction_output_dir)
 
 
 if __name__ == "__main__":
@@ -357,14 +490,24 @@ if __name__ == "__main__":
     parser.add_argument("mesh", nargs="?", help="Optional path to a .msh file.")
     parser.add_argument(
         "--output-dir",
-        default="figures/reaction_diffusion_SIR_snapshots_adaptive",
-        help="Folder for saved snapshots and the combined figure.",
+        default=DEFAULT_OUTPUT_DIR,
+        help="Folder for S, I, and R density snapshots.",
+    )
+    parser.add_argument(
+        "--fraction-output-dir",
+        default=DEFAULT_FRACTION_OUTPUT_DIR,
+        help="Folder for recovered-fraction snapshots.",
     )
     parser.add_argument("--n-snapshots", type=int, default=6)
     parser.add_argument("--t-end", type=float, default=DEFAULT_T)
     parser.add_argument("--dt", type=float, default=DEFAULT_DT, help="Initial and maximum time step.")
     parser.add_argument("--min-dt", type=float, default=DEFAULT_MIN_DT)
     parser.add_argument("--max-rejections", type=int, default=20)
+    parser.add_argument(
+        "--recovered-fraction-only",
+        action="store_true",
+        help="Save only the S, I, and R fractions of the local total population.",
+    )
     args = parser.parse_args()
 
     main(
@@ -375,4 +518,6 @@ if __name__ == "__main__":
         dt=args.dt,
         min_dt=args.min_dt,
         max_rejections=args.max_rejections,
+        recovered_fraction_only=args.recovered_fraction_only,
+        fraction_output_dir=args.fraction_output_dir,
     )

@@ -7,17 +7,23 @@ from mesh_utils import load_gmsh_tri
 
 
 DEFAULT_MESHES = {
-    "Coarse heptagon": "heptagon_irregular_mesh.msh",
-    "Refined star-split": "test_mesh.msh",
-    "Star-split hexagon": "hexagon_starsplit_mesh.msh",
-    "Complex irregular": "hexagon_irregular_complex_mesh.msh",
+    "Square (regular)": "square_regular_mesh.msh",
+    "Nested square (2 intervals)": "meshes_diffusion_refinement/square_nested_2.msh",
+    "Nested square (4 intervals)": "meshes_diffusion_refinement/square_nested_4.msh",
+    "Nested square (8 intervals)": "meshes_diffusion_refinement/square_nested_8.msh",
+    "Nested square (16 intervals)": "meshes_diffusion_refinement/square_nested_16.msh",
+    "Nested square (32 intervals)": "meshes_diffusion_refinement/square_nested_32.msh",
 }
 
 
 def plot_mesh_comparison(meshes: dict[str, str], output: str) -> None:
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    figure, axes = plt.subplots(2, 2, figsize=(12, 10), constrained_layout=True)
+    columns = 3
+    rows = (len(meshes) + columns - 1) // columns
+    figure, axes = plt.subplots(
+        rows, columns, figsize=(5.5 * columns, 5 * rows), constrained_layout=True
+    )
 
     for axis, (title, mesh_filename) in zip(axes.flat, meshes.items()):
         mesh = load_gmsh_tri(mesh_filename)
@@ -28,6 +34,9 @@ def plot_mesh_comparison(meshes: dict[str, str], output: str) -> None:
         axis.set_ylabel("y")
         axis.grid(True, linewidth=0.3, alpha=0.4)
 
+    for axis in axes.flat[len(meshes):]:
+        axis.set_visible(False)
+
     figure.suptitle("Finite-element mesh comparison", fontsize=16)
     figure.savefig(output_path, dpi=200)
     print(f"Saved mesh comparison to {output_path}")
@@ -37,8 +46,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Plot a comparison of project meshes.")
     parser.add_argument(
         "--output",
-        default="mesh_comparison.png",
-        help="Output image path (default: mesh_comparison.png).",
+        default="mesh_comparison_refinement.png",
+        help="Output image path (default: mesh_comparison_refinement.png).",
     )
     args = parser.parse_args()
 
