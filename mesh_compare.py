@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from mesh_utils import load_gmsh_tri
 
 
+PROJECT_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT = PROJECT_DIR / "figures" / "mesh_comparison_refinement.png"
+
 DEFAULT_MESHES = {
     "Square (regular)": "square_regular_mesh.msh",
     "Nested square (2 intervals)": "meshes_diffusion_refinement/square_nested_2.msh",
@@ -46,14 +49,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Plot a comparison of project meshes.")
     parser.add_argument(
         "--output",
-        default="mesh_comparison_refinement.png",
-        help="Output image path (default: mesh_comparison_refinement.png).",
+        default=str(DEFAULT_OUTPUT),
+        help=f"Output image path (default: {DEFAULT_OUTPUT}).",
     )
     args = parser.parse_args()
 
-    project_root = Path(__file__).parent
     meshes = {
-        title: str(project_root / filename)
+        title: str(PROJECT_DIR / filename)
         for title, filename in DEFAULT_MESHES.items()
     }
     plot_mesh_comparison(meshes, args.output)
