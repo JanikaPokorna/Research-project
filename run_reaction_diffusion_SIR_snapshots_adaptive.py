@@ -47,7 +47,7 @@ def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
     N = S + I + R + eps
     incidence = beta * (S * I / N)
 
-    fS = nu * (1.0 - S) - incidence - mu * S
+    fS = mu * N - incidence - mu * S
     fI = incidence - (gamma + mu) * I
     fR = gamma * I - mu * R
     return fS, fI, fR
