@@ -1,18 +1,28 @@
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
 import matplotlib
 matplotlib.use("Agg")
+from matplotlib.collections import LineCollection
+from matplotlib.pylab import beta
 import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation
 import numpy as np
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
 
-from skfem import Basis, FacetBasis, LinearForm, asm
+from diffusion_coefficients import (
+    DEFAULT_D_EPSILON,
+    DEFAULT_D_HIGH,
+    DEFAULT_TRANSITION_WIDTH,
+    diffusion_coefficient,
+    get_interface_segments,
+)
+from skfem import Basis, BilinearForm, FacetBasis, LinearForm, asm
 from skfem.element import ElementTriP1
-from skfem.models.poisson import laplace, mass
+from skfem.models.poisson import mass
 
 
 from mesh_utils import load_gmsh_tri_with_boundary_groups
@@ -20,7 +30,7 @@ from mesh_utils import load_gmsh_tri_with_boundary_groups
 DEFAULT_T = 7
 DEFAULT_DT = 1e-3
 DEFAULT_MIN_DT = 1e-8
-DEFAULT_MESH = "hexagon_irregular_complex_mesh.msh"
+DEFAULT_MESH = "hexagon_irregular_complex_refined.msh"
 DEFAULT_OUTPUT_DIR = "figures/reaction_diffusion_SIR_snapshots_adaptive"
 DEFAULT_FRACTION_OUTPUT_DIR = "figures/reaction_diffusion_SIR_recovered_fraction"
 
@@ -43,9 +53,16 @@ def initial_conditions(basis: Basis):
 
 
 def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
-    """Density-based nodewise reactions for the SIR model."""
-    N = S + I + R + eps
-    incidence = beta * (S * I / N)
+    """Density-based nodewise reactions for the SIR model.
+
+    This matches the PDE system
+        dS/dt - div(D_S(x) grad S)  = mu N - beta SI/N - mu S,
+        dI/dt - div(D_I(x) grad I)  = beta SI/N - (gamma + mu) I,
+        dR/dt - div(D_R(x) grad R)  = gamma I - mu R,
+    with the current implementation using a local total population N = S + I + R + eps.
+    """
+    N = S + I + R
+    incidence = beta * S * I / np.maximum(N, eps)
 
     fS = mu * N - incidence - mu * S
     fI = incidence - (gamma + mu) * I
@@ -53,9 +70,22 @@ def reaction_terms(S, I, R, nu, beta, mu, gamma, eps=1e-12):
     return fS, fI, fR
 
 
+def diffusion_matrix(basis: Basis, coefficient):
+    """Build the weak diffusion operator for a spatially varying coefficient D(x, y)."""
+
+    @BilinearForm
+    def variable_diffusion(u, v, w):
+        x, y = w.x
+        return coefficient(x, y) * (u.grad[0] * v.grad[0] + u.grad[1] * v.grad[1])
+
+    return asm(variable_diffusion, basis)
+
+
 def assemble_boundary_fluxes(mesh, boundary_groups, fluxes, basis):
     boundary_load = np.zeros(basis.N)
     for group_name, facets in boundary_groups.items():
+        if group_name not in fluxes:
+            continue
         flux = fluxes[group_name]
 
         @LinearForm
@@ -70,7 +100,10 @@ def assemble_boundary_fluxes(mesh, boundary_groups, fluxes, basis):
 def sample_snapshot_times(T, n_snapshots):
     if n_snapshots <= 1:
         return [T]
-    return [T * idx / (n_snapshots - 1) for idx in range(n_snapshots)]
+    if T == 0.0:
+        return [0.0]
+    first_time = min(0.01, T / 2.0)
+    return np.linspace(first_time, T, n_snapshots).tolist()
 
 
 def run_simulation(
@@ -80,6 +113,10 @@ def run_simulation(
     n_snapshots: int = 6,
     min_dt: float = DEFAULT_MIN_DT,
     max_rejections: int = 20,
+    diffusion_function: Callable = diffusion_coefficient,
+    d_high: float = DEFAULT_D_HIGH,
+    d_epsilon: float = DEFAULT_D_EPSILON,
+    transition_width: float = DEFAULT_TRANSITION_WIDTH,
 ):
     if T < 0.0:
         raise ValueError("T must be nonnegative.")
@@ -92,15 +129,17 @@ def run_simulation(
     if max_rejections < 0:
         raise ValueError("max_rejections must be nonnegative.")
 
-    msh_path = mesh_filename or str(Path(__file__).with_name(DEFAULT_MESH))
+    msh_path = mesh_filename or str(Path(__file__).resolve().parent / DEFAULT_MESH)
     mesh, boundary_groups = load_gmsh_tri_with_boundary_groups(msh_path)
+    interface_segments = get_interface_segments(mesh, boundary_groups)
     basis = Basis(mesh, ElementTriP1())
 
     # Zero flux through the outer boundary: a closed population.
-    boundary_fluxes = {name: 0.0 for name in boundary_groups}
+    boundary_fluxes = {
+        name: 0.0 for name in boundary_groups if name != "InternalInterface"
+    }
     boundary_load = assemble_boundary_fluxes(mesh, boundary_groups, boundary_fluxes, basis)
 
-    K = asm(laplace, basis)
     M = asm(mass, basis)
     # Row-sum mass lumping reduces small negative undershoots in P1 states.
     M = diags(np.asarray(M.sum(axis=1)).ravel())
@@ -110,9 +149,19 @@ def run_simulation(
     mu = 0.0
     gamma = 0.5
 
-    DS = 1e-3
-    DI = 1e-3
-    DR = 1e-3
+    def region_diffusion(x, y):
+        return diffusion_function(
+            x,
+            y,
+            interface_segments,
+            D_high=d_high,
+            D_epsilon=d_epsilon,
+            transition_width=transition_width,
+        )
+
+    DS = DI = DR = region_diffusion
+    Kdiffusion = diffusion_matrix(basis, DS)
+    KS = KI = KR = Kdiffusion
 
     S, I, R = initial_conditions(basis)
     ones = np.ones(basis.N)
@@ -154,12 +203,13 @@ def run_simulation(
         trial_dt = proposed_dt
         rejections = 0
         accepted = False
-        failure_reason = "unknown failure"
+        
 
         while not accepted:
-            AS = (M / trial_dt) + DS * K
-            AI = (M / trial_dt) + DI * K
-            AR = (M / trial_dt) + DR * K
+            failure_reason = "unknown failure"
+            AS = (M / trial_dt) + KS
+            AI = (M / trial_dt) + KI
+            AR = (M / trial_dt) + KR
 
             rhsS_base = (M @ S) / trial_dt
             rhsI_base = (M @ I) / trial_dt
@@ -277,6 +327,8 @@ def plot_recovered_fraction_snapshots(mesh, snapshots, output_dir: str | Path):
         raise ValueError("No snapshots were generated.")
 
     triangulation = Triangulation(mesh.p[0], mesh.p[1], triangles=mesh.t.T)
+    boundary_edges = mesh.facets[:, mesh.boundary_facets()]
+    boundary_segments = mesh.p[:, boundary_edges].transpose(2, 1, 0)
     compartment_fractions = {name: [] for name in ("S", "I", "R")}
     for _, susceptible, infected, recovered in snapshots:
         total = susceptible + infected + recovered
@@ -313,10 +365,9 @@ def plot_recovered_fraction_snapshots(mesh, snapshots, output_dir: str | Path):
             raise ValueError(
                 f"{label} outside [0, 1]: [{fraction_min:.6g}, {fraction_max:.6g}]."
             )
-        color_min = fraction_min
-        color_max = fraction_max
-        if np.isclose(color_min, color_max):
-            color_max = color_min + 1e-12
+
+        color_min = 0.0
+        color_max = 1.0
         color_levels = np.linspace(color_min, color_max, 31)
 
         fig, axes = plt.subplots(2, 3, figsize=(15, 8), constrained_layout=True)
@@ -324,7 +375,8 @@ def plot_recovered_fraction_snapshots(mesh, snapshots, output_dir: str | Path):
         for ax in axes:
             ax.set_axis_off()
 
-        for idx, (time, _, _, _) in enumerate(snapshots[:6]):
+        display_snapshots = snapshots[:6]
+        for idx, (time, _, _, _) in enumerate(display_snapshots):
             ax = axes[idx]
             ax.set_axis_on()
             contour = ax.tricontourf(
@@ -334,6 +386,15 @@ def plot_recovered_fraction_snapshots(mesh, snapshots, output_dir: str | Path):
                 vmin=color_min,
                 vmax=color_max,
                 cmap=cmap,
+                extend="max",
+            )
+            ax.add_collection(
+                LineCollection(
+                    boundary_segments,
+                    colors="black",
+                    linewidths=0.7,
+                    zorder=3,
+                )
             )
             ax.set_aspect("equal")
             ax.set_title(f"t = {time:.3f}")
@@ -341,39 +402,20 @@ def plot_recovered_fraction_snapshots(mesh, snapshots, output_dir: str | Path):
             ax.set_ylabel("y")
             fig.colorbar(contour, ax=ax, label=f"{name} / (S + I + R)")
 
-        for ax in axes[min(len(snapshots), 6):]:
+        for ax in axes[min(len(display_snapshots), 6):]:
             ax.set_visible(False)
 
         if name == "R":
             combined_name = "reaction_diffusion_SIR_recovered_fraction_snapshots_adaptive.png"
-            image_prefix = "adaptive_R_fraction_snapshot"
         else:
             combined_name = f"reaction_diffusion_SIR_{name}_fraction_snapshots_adaptive.png"
-            image_prefix = f"adaptive_{name}_fraction_snapshot"
         fraction_path = output_dir / combined_name
         fig.savefig(fraction_path, dpi=200)
         plt.close(fig)
 
-        for idx, (time, _, _, _) in enumerate(snapshots):
-            fig_single, ax_single = plt.subplots(figsize=(5, 4))
-            contour = ax_single.tricontourf(
-                triangulation,
-                field_values[idx],
-                levels=color_levels,
-                vmin=color_min,
-                vmax=color_max,
-                cmap=cmap,
-            )
-            ax_single.set_aspect("equal")
-            ax_single.set_title(f"{label} at t = {time:.3f}")
-            fig_single.colorbar(contour, ax=ax_single, label=f"{name} / (S + I + R)")
-            fig_single.tight_layout()
-            fig_single.savefig(output_dir / f"{image_prefix}_{idx + 1:02d}.png", dpi=200)
-            plt.close(fig_single)
-
         print(
-            f"Saved {label.lower()} snapshots to {fraction_path}; "
-            f"range=[{fraction_min:.6g}, {fraction_max:.6g}]."
+            f"Saved {label.lower()} six-panel plot to {fraction_path}; "
+            f"fixed range=[0.0, 1.0]."
         )
 
 
@@ -465,8 +507,12 @@ def main(
     dt: float = DEFAULT_DT,
     min_dt: float = DEFAULT_MIN_DT,
     max_rejections: int = 20,
-    recovered_fraction_only: bool = False,
+    recovered_fraction_only: bool = True,
     fraction_output_dir: str | Path = DEFAULT_FRACTION_OUTPUT_DIR,
+    diffusion_function: Callable = diffusion_coefficient,
+    d_high: float = DEFAULT_D_HIGH,
+    d_epsilon: float = DEFAULT_D_EPSILON,
+    transition_width: float = DEFAULT_TRANSITION_WIDTH,
 ):
     mesh, snapshots = run_simulation(
         mesh_filename=mesh_filename,
@@ -475,12 +521,12 @@ def main(
         n_snapshots=n_snapshots,
         min_dt=min_dt,
         max_rejections=max_rejections,
+        diffusion_function=diffusion_function,
+        d_high=d_high,
+        d_epsilon=d_epsilon,
+        transition_width=transition_width,
     )
-    if recovered_fraction_only:
-        plot_recovered_fraction_snapshots(mesh, snapshots, fraction_output_dir)
-    else:
-        plot_snapshots(mesh, snapshots, output_dir)
-        plot_recovered_fraction_snapshots(mesh, snapshots, fraction_output_dir)
+    plot_recovered_fraction_snapshots(mesh, snapshots, fraction_output_dir)
 
 
 if __name__ == "__main__":
@@ -491,7 +537,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir",
         default=DEFAULT_OUTPUT_DIR,
-        help="Folder for S, I, and R density snapshots.",
+        help="Legacy output directory retained for compatibility; the script now saves only recovered-fraction plots.",
     )
     parser.add_argument(
         "--fraction-output-dir",
@@ -503,11 +549,9 @@ if __name__ == "__main__":
     parser.add_argument("--dt", type=float, default=DEFAULT_DT, help="Initial and maximum time step.")
     parser.add_argument("--min-dt", type=float, default=DEFAULT_MIN_DT)
     parser.add_argument("--max-rejections", type=int, default=20)
-    parser.add_argument(
-        "--recovered-fraction-only",
-        action="store_true",
-        help="Save only the S, I, and R fractions of the local total population.",
-    )
+    parser.add_argument("--d-high", type=float, default=DEFAULT_D_HIGH)
+    parser.add_argument("--d-epsilon", type=float, default=DEFAULT_D_EPSILON)
+    parser.add_argument("--transition-width", type=float, default=DEFAULT_TRANSITION_WIDTH)
     args = parser.parse_args()
 
     main(
@@ -518,6 +562,9 @@ if __name__ == "__main__":
         dt=args.dt,
         min_dt=args.min_dt,
         max_rejections=args.max_rejections,
-        recovered_fraction_only=args.recovered_fraction_only,
+        d_high=args.d_high,
+        d_epsilon=args.d_epsilon,
+        transition_width=args.transition_width,
+        recovered_fraction_only=True,
         fraction_output_dir=args.fraction_output_dir,
     )
