@@ -11,7 +11,7 @@ import numpy as np
 
 from mesh_utils import load_gmsh_tri_with_boundary_groups
 
-DEFAULT_MESH = "hexagon_irregular_complex_refined.msh"
+DEFAULT_MESH = "hexagon_irregular_complex_very_refined.msh"
 DEFAULT_OUTPUT = "figures/nonuniform_diffusion_preview.png"
 DEFAULT_PROFILE_OUTPUT = "figures/diffusion_profile_along_region_line.png"
 DEFAULT_D_HIGH = 1.0e-3

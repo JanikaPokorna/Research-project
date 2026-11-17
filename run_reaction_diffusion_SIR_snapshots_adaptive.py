@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation
 import numpy as np
 from scipy.sparse import diags
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import factorized
 
 from diffusion_coefficients import (
     DEFAULT_D_EPSILON,
@@ -30,7 +30,7 @@ from mesh_utils import load_gmsh_tri_with_boundary_groups
 DEFAULT_T = 7
 DEFAULT_DT = 1e-3
 DEFAULT_MIN_DT = 1e-8
-DEFAULT_MESH = "hexagon_irregular_complex_refined.msh"
+DEFAULT_MESH = "hexagon_irregular_complex_very_refined.msh"
 DEFAULT_OUTPUT_DIR = "figures/reaction_diffusion_SIR_snapshots_adaptive"
 DEFAULT_FRACTION_OUTPUT_DIR = "figures/reaction_diffusion_SIR_recovered_fraction"
 
@@ -40,15 +40,15 @@ def initial_conditions(basis: Basis):
     x = basis.doflocs[0]
     y = basis.doflocs[1]
 
-    I0 = 0.1 * np.exp(-((x - 0.5) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2)) 
-    S0 = 1.0 - I0
-    R0 = np.zeros_like(x)
-
-    # I_left = 0.1 * np.exp(-((x - 0.25) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
-    # I_right = 0.1 * np.exp(-((x - 0.75) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
-    # I0 = I_left + I_right
+    # I0 = 0.1 * np.exp(-((x - 0.5) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2)) 
     # S0 = 1.0 - I0
     # R0 = np.zeros_like(x)
+
+    I_left = 0.1 * np.exp(-((x - 0.25) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
+    I_right = 0.1 * np.exp(-((x - 0.75) ** 2 + (y - 0.5) ** 2) / (2 * 0.05 ** 2))
+    I0 = I_left + I_right
+    S0 = 1.0 - I0
+    R0 = np.zeros_like(x)
     return S0, I0, R0
 
 
@@ -207,9 +207,8 @@ def run_simulation(
 
         while not accepted:
             failure_reason = "unknown failure"
-            AS = (M / trial_dt) + KS
-            AI = (M / trial_dt) + KI
-            AR = (M / trial_dt) + KR
+            system_matrix = (M / trial_dt) + Kdiffusion
+            solve_system = factorized(system_matrix.tocsc())
 
             rhsS_base = (M @ S) / trial_dt
             rhsI_base = (M @ I) / trial_dt
@@ -230,9 +229,9 @@ def run_simulation(
                 bI = rhsI_base + (M @ fI) + boundary_load
                 bR = rhsR_base + (M @ fR) + boundary_load
 
-                Snew = cast(np.ndarray, spsolve(AS, bS))
-                Inew = cast(np.ndarray, spsolve(AI, bI))
-                Rnew = cast(np.ndarray, spsolve(AR, bR))
+                Snew = cast(np.ndarray, solve_system(bS))
+                Inew = cast(np.ndarray, solve_system(bI))
+                Rnew = cast(np.ndarray, solve_system(bR))
                 new_state = (Snew, Inew, Rnew)
 
                 if not all(np.isfinite(field).all() for field in new_state):

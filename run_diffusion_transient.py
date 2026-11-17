@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation
 import numpy as np
 from scipy.sparse import diags
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import factorized
 
 from skfem import Basis, asm
 from skfem.element import ElementTriP1
@@ -74,6 +74,7 @@ def run_simulation(
     current_time = 0.0
     dt_current = dt
     step_number = 0
+    step_operators = {}
     while current_time < T:
         next_target = target_times[target_index] if target_index < len(target_times) else T
         proposed_dt = min(dt_current, T - current_time, next_target - current_time)
@@ -87,9 +88,13 @@ def run_simulation(
         trial_dt = proposed_dt
         rejections = 0
         while True:
-            system = (lumped_mass / trial_dt) + stiffness
-            rhs = (lumped_mass @ u) / trial_dt
-            candidate = np.asarray(spsolve(system, rhs))
+            operators = step_operators.get(trial_dt)
+            if operators is None:
+                mass_over_dt = lumped_mass / trial_dt
+                system = mass_over_dt + stiffness
+                operators = factorized(system.tocsc())
+                step_operators[trial_dt] = operators
+            candidate = np.asarray(operators(mass_over_dt @ u))
 
             state_scale = max(1.0, float(np.max(np.abs(u))))
             allowed_negative = 1e-12 * state_scale

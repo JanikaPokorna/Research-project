@@ -98,6 +98,8 @@ This is a Gmsh geometry file without a `.geo` extension. It defines a unit squar
 
 It uses transfinite meshing with 11 points per side, producing 10 equal intervals along each edge. Run `python "square mesh generate.py"` to create `square_regular_mesh.msh` with first-order triangles and the same named boundary groups.
 
+`generate_diffusion_refinement_meshes.py` creates nested unit-square meshes with 2, 4, 8, 16, 32, 64, and 128 intervals per side in `meshes_diffusion_refinement`. The mesh comparison displays all levels; transient diffusion verification uses 16, 32, 64, and 128 intervals with the solver's implicit Euler method. Its time step is reduced proportionally to $h^2$ across refinement levels to limit temporal-error contamination of the spatial convergence rate.
+
 ### `mesh.geo`
 
 Defines an irregular seven-sided polygon. It has one plane surface and seven named boundary curves `Gamma_1` through `Gamma_7`. Despite some filenames using the word hexagon, this geometry has seven outer vertices.

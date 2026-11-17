@@ -14,12 +14,10 @@ DEFAULT_OUTPUT = PROJECT_DIR / "figures" / "mesh_comparison_refinement.png"
 DEFAULT_SHAPE_OUTPUT = PROJECT_DIR / "figures" / "mesh_comparison.png"
 
 SQUARE_MESHES = {
-    "Square (regular)": "Testovaci_a_nepotrebne_kody/square_regular_mesh.msh",
-    "Nested square (2 intervals)": "meshes_diffusion_refinement/square_nested_2.msh",
-    "Nested square (4 intervals)": "meshes_diffusion_refinement/square_nested_4.msh",
-    "Nested square (8 intervals)": "meshes_diffusion_refinement/square_nested_8.msh",
     "Nested square (16 intervals)": "meshes_diffusion_refinement/square_nested_16.msh",
     "Nested square (32 intervals)": "meshes_diffusion_refinement/square_nested_32.msh",
+    "Nested square (64 intervals)": "meshes_diffusion_refinement/square_nested_64.msh",
+    "Nested square (128 intervals)": "meshes_diffusion_refinement/square_nested_128.msh",
 }
 
 POLYGON_MESHES = {
@@ -27,7 +25,7 @@ POLYGON_MESHES = {
     "Star-split hexagon": "Testovaci_a_nepotrebne_kody/hexagon_starsplit_mesh.msh",
     "Complex hexagon": "Testovaci_a_nepotrebne_kody/complex_hexagon_mesh.msh",
     "Irregular complex hexagon": "hexagon_irregular_complex_mesh.msh",
-    "Refined irregular hexagon": "hexagon_irregular_complex_refined.msh",
+    "Very refined irregular hexagon": "hexagon_irregular_complex_very_refined.msh",
     "Heptagon": "Testovaci_a_nepotrebne_kody/heptagon_mesh.msh",
     "Irregular heptagon": "Testovaci_a_nepotrebne_kody/heptagon_irregular_mesh.msh",
 }
@@ -36,7 +34,7 @@ POLYGON_MESHES = {
 def plot_mesh_comparison(meshes: dict[str, str], output: str) -> None:
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    columns = 3
+    columns = 2
     rows = (len(meshes) + columns - 1) // columns
     figure, axes = plt.subplots(
         rows, columns, figsize=(5.5 * columns, 5 * rows), constrained_layout=True

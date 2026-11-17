@@ -18,14 +18,19 @@ from run_diffusion_transient import DEFAULT_T, initial_condition, run_simulation
 
 PROJECT_DIR = Path(__file__).resolve().parent
 REFINED_MESHES = (
-    "square_nested_2.msh",
-    "square_nested_4.msh",
-    "square_nested_8.msh",
     "square_nested_16.msh",
     "square_nested_32.msh",
+    "square_nested_64.msh",
+    "square_nested_128.msh",
 )
 DEFAULT_OUTPUT_DIR = PROJECT_DIR / "figures" / "diffusion_transient_verification"
 DEFAULT_DT = 1e-4
+BASE_INTERVALS = 16
+
+
+def time_step_for_mesh(mesh_name: str, base_dt: float = DEFAULT_DT) -> float:
+    intervals = int(Path(mesh_name).stem.rsplit("_", 1)[1])
+    return base_dt * (BASE_INTERVALS / intervals) ** 2
 
 
 def exact_solution(x, time: float):
@@ -59,6 +64,84 @@ def measure_solution(mesh, final_values: np.ndarray, time: float):
 
     return l2_error, relative_mass_drift
 
+def save_verification_table(results, output_dir, T, base_dt):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for result in results:
+        order = result["observed_order"]
+        rows.append([
+            str(result["triangles"]),
+            str(result["vertices"]),
+            f'{result["h_max"]:.5f}',
+            f'{result["dt"]:.2e}',
+            f'{result["l2_error"]:.6e}',
+            f"{order:.3f}" if np.isfinite(order) else "—",
+        ])
+
+    headers = [
+        "Triangles",
+        "Vertices",
+        r"$h_{\max}$",
+        "$\\Delta t$",
+        r"$\|u_h(T)-u(T)\|_{L^2(\Omega)}$",
+        "Observed order",
+    ]
+
+    fig, ax = plt.subplots(figsize=(11, 2.2 + 0.45 * len(rows)))
+    fig.patch.set_facecolor("white")
+    ax.set_axis_off()
+
+    ax.set_title(
+        "Mesh refinement study: transient diffusion (implicit Euler)\n"
+        rf"$T={T:g}$, $\Delta t \propto h^2$, $\Delta t_{{16}}={base_dt:g}$",
+        fontsize=15,
+        pad=20,
+    )
+
+    table = ax.table(
+        cellText=rows,
+        colLabels=headers,
+        cellLoc="center",
+        colLoc="center",
+        colWidths=[0.12, 0.12, 0.13, 0.12, 0.31, 0.20],
+        loc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1.0, 2.0)
+
+    for (row, column), cell in table.get_celld().items():
+        cell.set_edgecolor("#D5DCE4")
+        cell.set_linewidth(0.6)
+
+        if row == 0:
+            cell.set_facecolor("#243B53")
+            cell.set_text_props(color="white", weight="bold")
+        else:
+            cell.set_facecolor("#EEF3F8" if row % 2 else "white")
+
+    fig.text(
+        0.5, 0.04,
+        "Error evaluated by element quadrature; "
+        "order computed between successive mesh levels.",
+        ha="center",
+        fontsize=9,
+        color="#52606D",
+    )
+
+    fig.tight_layout(rect=(0, 0.09, 1, 1))
+
+    for extension in ("png", "pdf"):
+        fig.savefig(
+            output_dir / f"diffusion_verification_table.{extension}",
+            dpi=300,
+            bbox_inches="tight",
+            facecolor="white",
+        )
+
+    plt.close(fig)
 
 def run_verification(T: float, dt: float, output_dir: str | Path):
     output_dir = Path(output_dir)
@@ -67,10 +150,11 @@ def run_verification(T: float, dt: float, output_dir: str | Path):
 
     for mesh_name in REFINED_MESHES:
         mesh_path = PROJECT_DIR / "meshes_diffusion_refinement" / mesh_name
+        mesh_dt = time_step_for_mesh(mesh_name, dt)
         mesh, snapshots = run_simulation(
             mesh_filename=str(mesh_path),
             T=T,
-            dt=dt,
+            dt=mesh_dt,
             n_snapshots=2,
         )
         final_time, final_values = snapshots[-1]
@@ -82,6 +166,7 @@ def run_verification(T: float, dt: float, output_dir: str | Path):
                 "triangles": int(mesh.t.shape[1]),
                 "h_max": maximum_edge_length(mesh),
                 "time": final_time,
+                "dt": mesh_dt,
                 "l2_error": l2_error,
                 "relative_mass_drift": mass_drift,
                 "mesh_object": mesh,
@@ -97,12 +182,15 @@ def run_verification(T: float, dt: float, output_dir: str | Path):
     if results:
         results[0]["observed_order"] = float("nan")
 
+    save_verification_table(results, output_dir, T, dt)
+
     csv_path = output_dir / "diffusion_mesh_verification.csv"
     csv_columns = (
         "mesh",
         "vertices",
         "triangles",
         "h_max",
+        "dt",
         "time",
         "l2_error",
         "observed_order",
@@ -158,7 +246,10 @@ def run_verification(T: float, dt: float, output_dir: str | Path):
     error_axis.grid(True, which="both", alpha=0.25)
     error_axis.legend()
 
-    fig.suptitle(f"Transient diffusion verification (dt={dt:g}, T={T:g})")
+    fig.suptitle(
+        f"Transient diffusion verification (implicit Euler, dt scales with h²; "
+        f"dt16={dt:g}, T={T:g})"
+    )
     figure_path = output_dir / "diffusion_mesh_verification.png"
     fig.savefig(figure_path, dpi=200)
     plt.close(fig)
@@ -166,7 +257,8 @@ def run_verification(T: float, dt: float, output_dir: str | Path):
     for result in results:
         print(
             f"{result['mesh']}: vertices={result['vertices']}, "
-            f"h_max={result['h_max']:.4g}, L2 error={result['l2_error']:.4e}, "
+            f"h_max={result['h_max']:.4g}, dt={result['dt']:.3e}, "
+            f"L2 error={result['l2_error']:.4e}, "
             f"order={result['observed_order']:.3f}, "
             f"relative mass drift={result['relative_mass_drift']:.3e}"
         )

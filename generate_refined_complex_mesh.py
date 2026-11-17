@@ -7,8 +7,8 @@ import gmsh
 
 PROJECT_DIR = Path(__file__).resolve().parent
 DEFAULT_GEOMETRY = PROJECT_DIR / "Testovaci_a_nepotrebne_kody" / "complex_mesh.geo"
-DEFAULT_OUTPUT = PROJECT_DIR / "hexagon_irregular_complex_refined.msh"
-DEFAULT_SIZE = 0.015
+DEFAULT_OUTPUT = PROJECT_DIR / "hexagon_irregular_complex_very_refined.msh"
+DEFAULT_SIZE = 0.008
 
 
 def add_internal_interface_group() -> int:

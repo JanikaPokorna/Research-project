@@ -17,6 +17,8 @@ REFINEMENT_LEVELS = (
     ("square_nested_8.msh", 8),
     ("square_nested_16.msh", 16),
     ("square_nested_32.msh", 32),
+    ("square_nested_64.msh", 64),
+    ("square_nested_128.msh", 128),
 )
 BOUNDARY_GROUPS = (
     ("Gamma_bottom", 2, 1),
